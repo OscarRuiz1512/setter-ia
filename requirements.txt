@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+google-generativeai
+httpx
+sqlalchemy
+psycopg2-binary
+python-dotenv
