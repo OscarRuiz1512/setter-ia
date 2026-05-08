@@ -211,9 +211,77 @@
   let token = localStorage.getItem('token') || '';
   let tenants = [];
 
-  if (token) showDashboard();
+  // ── Init ─────────────────────────────────────────────────────────────────
+  async function init() {
+    try {
+      const res = await fetch(`${API}/admin/setup-required`);
+      const data = await res.json();
+      if (data.setup_required) {
+        show('setup-screen');
+        return;
+      }
+    } catch(e) {
+      // server unreachable — still try to show login
+    }
 
-  // ── Auth ────────────────────────────────────────────────────────────────
+    if (token) {
+      try {
+        const check = await fetch(`${API}/admin/tenants`, { headers: headers() });
+        if (check.ok) { showDashboard(); return; }
+      } catch(e) {}
+      token = '';
+      localStorage.removeItem('token');
+    }
+    show('login-screen');
+  }
+
+  function show(id) {
+    ['setup-screen','login-screen','dashboard'].forEach(s => {
+      const el = document.getElementById(s);
+      if (el) el.style.display = (s === id) ? (id === 'dashboard' ? 'block' : 'flex') : 'none';
+    });
+  }
+
+  // ── Auth ─────────────────────────────────────────────────────────────────
+  async function setupAccount() {
+    const email = document.getElementById('setup-email').value.trim();
+    const password = document.getElementById('setup-password').value;
+    const errEl = document.getElementById('setup-error');
+    const btn = document.getElementById('setup-btn');
+
+    if (!email || !password) {
+      errEl.textContent = 'Rellena el email y la contraseña';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    btn.textContent = 'Creando...'; btn.disabled = true;
+    errEl.style.display = 'none';
+
+    try {
+      const res = await fetch(`${API}/admin/setup`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email, password})
+      });
+      if (res.ok) {
+        const data = await res.json();
+        token = data.access_token;
+        localStorage.setItem('token', token);
+        showDashboard();
+      } else {
+        const e = await res.json();
+        errEl.textContent = e.detail || 'Error al crear la cuenta';
+        errEl.style.display = 'block';
+      }
+    } catch(e) {
+      errEl.textContent = 'No se puede conectar con el servidor';
+      errEl.style.display = 'block';
+    } finally {
+      btn.textContent = 'Crear cuenta'; btn.disabled = false;
+    }
+  }
+
   async function login() {
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
@@ -226,8 +294,7 @@
       return;
     }
 
-    btn.textContent = 'Entrando...';
-    btn.disabled = true;
+    btn.textContent = 'Entrando...'; btn.disabled = true;
     errEl.style.display = 'none';
 
     try {
@@ -245,25 +312,22 @@
         errEl.textContent = 'Email o contraseña incorrectos';
         errEl.style.display = 'block';
       }
-    } catch (e) {
+    } catch(e) {
       errEl.textContent = 'No se puede conectar con el servidor. ¿Está arrancado?';
       errEl.style.display = 'block';
     } finally {
-      btn.textContent = 'Entrar';
-      btn.disabled = false;
+      btn.textContent = 'Entrar'; btn.disabled = false;
     }
   }
 
   function logout() {
     token = '';
     localStorage.removeItem('token');
-    document.getElementById('login-screen').style.display = 'flex';
-    document.getElementById('dashboard').style.display = 'none';
+    show('login-screen');
   }
 
   function showDashboard() {
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('dashboard').style.display = 'block';
+    show('dashboard');
     loadTenants();
   }
 
@@ -271,7 +335,7 @@
     return {'Content-Type':'application/json', 'Authorization': `Bearer ${token}`};
   }
 
-  // ── Tabs ────────────────────────────────────────────────────────────────
+  // ── Tabs ──────────────────────────────────────────────────────────────────
   function showTab(tab) {
     document.getElementById('tab-clientes').style.display = tab === 'clientes' ? 'block' : 'none';
     document.getElementById('tab-leads').style.display = tab === 'leads' ? 'block' : 'none';
@@ -279,7 +343,7 @@
     if (tab === 'leads') loadLeads();
   }
 
-  // ── Tenants ─────────────────────────────────────────────────────────────
+  // ── Tenants ───────────────────────────────────────────────────────────────
   async function loadTenants() {
     const res = await fetch(`${API}/admin/tenants`, {headers: headers()});
     if (!res.ok) { logout(); return; }
@@ -288,12 +352,12 @@
     renderTenants(tenants);
   }
 
-  function renderStats(tenants) {
-    const active = tenants.filter(t => t.is_active).length;
+  function renderStats(list) {
+    const active = list.filter(t => t.is_active).length;
     document.getElementById('stats-grid').innerHTML = `
-      <div class="stat-card"><div class="stat-label">Total clientes</div><div class="stat-value">${tenants.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Total clientes</div><div class="stat-value">${list.length}</div></div>
       <div class="stat-card"><div class="stat-label">Activos</div><div class="stat-value" style="color:#34d399">${active}</div></div>
-      <div class="stat-card"><div class="stat-label">Inactivos</div><div class="stat-value" style="color:#f87171">${tenants.length - active}</div></div>
+      <div class="stat-card"><div class="stat-label">Inactivos</div><div class="stat-value" style="color:#f87171">${list.length - active}</div></div>
     `;
   }
 
@@ -321,7 +385,7 @@
           ${t.is_active
             ? `<button class="btn-sm btn-danger" onclick="toggleActive('${t.id}', false)">Desactivar</button>`
             : `<button class="btn-sm btn-success" onclick="toggleActive('${t.id}', true)">Activar</button>`}
-          <button class="btn-sm btn-danger" onclick="deleteTenant('${t.id}', '${t.name}')">Eliminar</button>
+          <button class="btn-sm btn-danger" onclick="deleteTenant('${t.id}', '${t.name.replace(/'/g,"\\'")}')">Eliminar</button>
         </div>
       </div>
     `).join('');
@@ -339,7 +403,7 @@
     if (res.ok) { toast('Cliente eliminado'); loadTenants(); }
   }
 
-  // ── Modal crear/editar ───────────────────────────────────────────────────
+  // ── Modal crear/editar ────────────────────────────────────────────────────
   function openCreateModal() {
     document.getElementById('modal-title').textContent = 'Nuevo cliente';
     document.getElementById('modal-tenant-id').value = '';
@@ -347,6 +411,7 @@
       document.getElementById(`f-${f}`).value = '';
     });
     document.getElementById('f-setter-name').value = 'Alex';
+    document.getElementById('f-plan').value = 'basic';
     document.getElementById('modal-overlay').classList.add('open');
   }
 
@@ -374,7 +439,7 @@
   async function saveTenant() {
     const id = document.getElementById('modal-tenant-id').value;
     const body = {
-      name: document.getElementById('f-name').value,
+      name: document.getElementById('f-name').value.trim(),
       setter_name: document.getElementById('f-setter-name').value || 'Alex',
       plan: document.getElementById('f-plan').value,
       instagram_account_id: document.getElementById('f-ig-id').value || null,
@@ -386,7 +451,8 @@
       owner_whatsapp: document.getElementById('f-owner-wa').value || null,
       system_prompt: document.getElementById('f-prompt').value || null,
     };
-    // Remove null values if editing (don't overwrite with null)
+
+    if (!body.name) { toast('El nombre es obligatorio', true); return; }
     if (id) Object.keys(body).forEach(k => body[k] === null && delete body[k]);
 
     const res = await fetch(
@@ -394,10 +460,10 @@
       { method: id ? 'PUT' : 'POST', headers: headers(), body: JSON.stringify(body) }
     );
     if (res.ok) { toast(id ? 'Cliente actualizado' : 'Cliente creado'); closeModal(); loadTenants(); }
-    else { const e = await res.json(); toast(e.detail || 'Error', true); }
+    else { const e = await res.json(); toast(e.detail || 'Error al guardar', true); }
   }
 
-  // ── Modal reentrenar IA ──────────────────────────────────────────────────
+  // ── Modal reentrenar IA ───────────────────────────────────────────────────
   function openRetrain(id) {
     document.getElementById('retrain-tenant-id').value = id;
     document.getElementById('retrain-feedback').value = '';
@@ -408,8 +474,8 @@
 
   async function submitRetrain() {
     const id = document.getElementById('retrain-tenant-id').value;
-    const feedback = document.getElementById('retrain-feedback').value;
-    if (!feedback.trim()) return;
+    const feedback = document.getElementById('retrain-feedback').value.trim();
+    if (!feedback) return;
     const btn = document.querySelector('#retrain-overlay .btn-sm:last-child');
     btn.textContent = 'Procesando...'; btn.disabled = true;
     const res = await fetch(`${API}/admin/tenants/${id}/retrain`, {
@@ -420,7 +486,7 @@
     else { toast('Error al reentrenar', true); }
   }
 
-  // ── Leads ────────────────────────────────────────────────────────────────
+  // ── Leads ─────────────────────────────────────────────────────────────────
   async function loadLeads() {
     const res = await fetch(`${API}/admin/leads`, {headers: headers()});
     if (!res.ok) return;
@@ -440,7 +506,7 @@
     `).join('');
   }
 
-  // ── Toast ────────────────────────────────────────────────────────────────
+  // ── Toast ─────────────────────────────────────────────────────────────────
   function toast(msg, isError = false) {
     const t = document.getElementById('toast');
     t.textContent = msg;
@@ -448,19 +514,27 @@
     setTimeout(() => t.className = 'toast', 3000);
   }
 
-  document.getElementById('password').addEventListener('keydown', e => e.key === 'Enter' && login());
-
+  // ── Toggle password visibility ────────────────────────────────────────────
   function togglePassword() {
     const input = document.getElementById('password');
     const btn = document.getElementById('eye-btn');
-    if (input.type === 'password') {
-      input.type = 'text';
-      btn.textContent = '🙈';
-    } else {
-      input.type = 'password';
-      btn.textContent = '👁';
-    }
+    input.type = input.type === 'password' ? 'text' : 'password';
+    btn.textContent = input.type === 'password' ? '👁' : '🙈';
   }
+
+  function toggleSetupPassword() {
+    const input = document.getElementById('setup-password');
+    const btn = document.getElementById('eye-setup');
+    input.type = input.type === 'password' ? 'text' : 'password';
+    btn.textContent = input.type === 'password' ? '👁' : '🙈';
+  }
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  document.getElementById('password').addEventListener('keydown', e => e.key === 'Enter' && login());
+  document.getElementById('setup-password').addEventListener('keydown', e => e.key === 'Enter' && setupAccount());
+
+  // ── Start ─────────────────────────────────────────────────────────────────
+  init();
 </script>
 </body>
 </html>
