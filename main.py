@@ -1,108 +1,196 @@
+from __future__ import annotations
 import os
-import re
-import json
-import uuid
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from database import get_db, Conversation, Lead, init_db
-from whatsapp import send_message
-from claude_agent import get_ai_response
+from database import get_db, Tenant, init_db
+from admin import router as admin_router
+from instagram import handle_instagram_dm, handle_new_follower, handle_post_comment
+from whatsapp import handle_whatsapp_message
 
 load_dotenv()
 
-app = FastAPI()
+app = FastAPI(title="Setter IA — Plataforma Multi-tenant")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(admin_router)
+app.mount("/panel", StaticFiles(directory="admin_panel", html=True), name="panel")
+app.mount("/landing", StaticFiles(directory="landing"), name="landing")
 
 
 @app.on_event("startup")
 def startup():
     init_db()
+    _auto_create_admin()
 
 
-@app.get("/webhook")
-async def verify_webhook(request: Request):
+def _auto_create_admin():
+    """Crea el primer admin automáticamente si hay credenciales en el entorno y no existe ninguno."""
+    email = os.getenv("ADMIN_EMAIL")
+    password = os.getenv("ADMIN_PASSWORD")
+    if not email or not password:
+        return
+    from database import AdminUser
+    db = get_db()
+    try:
+        if db.query(AdminUser).first():
+            return
+        admin = AdminUser.create(email=email, password=password)
+        db.add(admin)
+        db.commit()
+        print(f"[Setter IA] Admin creado automáticamente: {email}")
+    except Exception as e:
+        print(f"[Setter IA] Error al crear admin: {e}")
+    finally:
+        db.close()
+
+
+# ── Helpers de tenant ────────────────────────────────────────────────────────
+
+def _get_tenant_by_instagram(account_id: str) -> Tenant | None:
+    db = get_db()
+    try:
+        return db.query(Tenant).filter_by(
+            instagram_account_id=account_id, is_active=True
+        ).first()
+    finally:
+        db.close()
+
+
+def _get_tenant_by_whatsapp(phone_id: str) -> Tenant | None:
+    db = get_db()
+    try:
+        return db.query(Tenant).filter_by(
+            whatsapp_phone_id=phone_id, is_active=True
+        ).first()
+    finally:
+        db.close()
+
+
+# ── Webhook de Instagram ─────────────────────────────────────────────────────
+
+@app.get("/webhook/instagram")
+async def verify_instagram_webhook(request: Request):
+    """Meta verifica el webhook con este endpoint al configurarlo."""
     mode = request.query_params.get("hub.mode")
     token = request.query_params.get("hub.verify_token")
     challenge = request.query_params.get("hub.challenge")
 
-    if mode == "subscribe" and token == os.getenv("VERIFY_TOKEN"):
+    verify_token = os.getenv("META_VERIFY_TOKEN", "setter_ia_verify")
+    if mode == "subscribe" and token == verify_token:
         return PlainTextResponse(challenge)
-    raise HTTPException(status_code=403, detail="Token inválido")
+    raise HTTPException(status_code=403, detail="Token de verificación inválido")
 
 
-@app.post("/webhook")
-async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
+@app.post("/webhook/instagram")
+async def instagram_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Recibe eventos de Instagram: DMs, nuevos seguidores, comentarios."""
+    data = await request.json()
+
+    for entry in data.get("entry", []):
+        account_id = entry.get("id")
+        tenant = _get_tenant_by_instagram(account_id)
+        if not tenant:
+            continue
+
+        # Mensajes directos
+        for messaging in entry.get("messaging", []):
+            sender_id = messaging.get("sender", {}).get("id")
+            if not sender_id or sender_id == account_id:
+                continue
+
+            message = messaging.get("message", {})
+            if message and message.get("text"):
+                background_tasks.add_task(
+                    handle_instagram_dm, tenant, sender_id, message["text"]
+                )
+
+        # Cambios de página (nuevos seguidores, comentarios)
+        for change in entry.get("changes", []):
+            field = change.get("field")
+            value = change.get("value", {})
+
+            if field == "follow":
+                follower_id = value.get("sender_id")
+                if follower_id:
+                    background_tasks.add_task(handle_new_follower, tenant, follower_id)
+
+            elif field == "comments":
+                commenter_id = value.get("from", {}).get("id")
+                comment_text = value.get("message", "")
+                post_id = value.get("media", {}).get("id", "")
+                if commenter_id and commenter_id != account_id:
+                    background_tasks.add_task(
+                        handle_post_comment, tenant, commenter_id, comment_text, post_id
+                    )
+
+    return {"status": "ok"}
+
+
+# ── Webhook de WhatsApp ──────────────────────────────────────────────────────
+
+@app.get("/webhook/whatsapp")
+async def verify_whatsapp_webhook(request: Request):
+    """Meta verifica el webhook de WhatsApp."""
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+
+    verify_token = os.getenv("META_VERIFY_TOKEN", "setter_ia_verify")
+    if mode == "subscribe" and token == verify_token:
+        return PlainTextResponse(challenge)
+    raise HTTPException(status_code=403, detail="Token de verificación inválido")
+
+
+@app.post("/webhook/whatsapp")
+async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Recibe mensajes entrantes de WhatsApp."""
     data = await request.json()
 
     try:
-        message = data["entry"][0]["changes"][0]["value"]["messages"][0]
-        phone_number = message["from"]
+        for entry in data.get("entry", []):
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                phone_id = value.get("metadata", {}).get("phone_number_id")
+                messages = value.get("messages", [])
 
-        if message["type"] != "text":
-            return {"status": "ok"}
+                if not phone_id or not messages:
+                    continue
 
-        text = message["text"]["body"]
-        background_tasks.add_task(process_message, phone_number, text)
-    except (KeyError, IndexError):
+                tenant = _get_tenant_by_whatsapp(phone_id)
+                if not tenant:
+                    continue
+
+                for message in messages:
+                    if message.get("type") != "text":
+                        continue
+                    phone_number = message["from"]
+                    text = message["text"]["body"]
+                    background_tasks.add_task(
+                        handle_whatsapp_message, tenant, phone_number, text
+                    )
+    except (KeyError, TypeError):
         pass
 
     return {"status": "ok"}
 
 
-def process_message(phone_number: str, text: str):
-    db = get_db()
-    try:
-        conv = db.query(Conversation).filter_by(phone_number=phone_number).first()
-        if not conv:
-            conv = Conversation(phone_number=phone_number, history="[]")
-            db.add(conv)
-            db.commit()
+# ── Panel de administración ──────────────────────────────────────────────────
 
-        if conv.stage == "completed":
-            send_message(
-                phone_number,
-                "¡Ya tenemos tus datos! En breve nos pondremos en contacto contigo. 💪",
-            )
-            return
+@app.get("/")
+def root():
+    return FileResponse("landing/index.html")
 
-        history = json.loads(conv.history)
-        history.append({"role": "user", "content": text})
 
-        response, lead_data = get_ai_response(history, phone_number)
-
-        history.append({"role": "assistant", "content": response})
-        conv.history = json.dumps(history)
-
-        # Strip marker before sending to user
-        clean_response = re.sub(r"\[\[LEAD_CAPTURED:.*?\]\]", "", response, flags=re.DOTALL).strip()
-        send_message(phone_number, clean_response)
-
-        if lead_data:
-            lead = Lead(
-                id=str(uuid.uuid4()),
-                phone_number=phone_number,
-                name=lead_data.get("name", ""),
-                email=lead_data.get("email", ""),
-                goal=lead_data.get("goal", ""),
-            )
-            db.add(lead)
-            conv.stage = "completed"
-            conv.name = lead_data.get("name")
-            conv.email = lead_data.get("email")
-            conv.goal = lead_data.get("goal")
-
-            owner = os.getenv("OWNER_PHONE_NUMBER")
-            if owner:
-                send_message(
-                    owner,
-                    f"🎯 *Nuevo Lead Calificado*\n\n"
-                    f"👤 Nombre: {lead_data.get('name', 'N/A')}\n"
-                    f"📧 Email: {lead_data.get('email', 'N/A')}\n"
-                    f"📱 Teléfono: {phone_number}\n"
-                    f"🏋️ Objetivo: {lead_data.get('goal', 'N/A')}",
-                )
-
-        db.commit()
-    finally:
-        db.close()
+@app.get("/health")
+def health():
+    return {"status": "ok"}

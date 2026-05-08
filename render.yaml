@@ -5,15 +5,15 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: WHATSAPP_TOKEN
+      - key: ANTHROPIC_API_KEY
         sync: false
-      - key: WHATSAPP_PHONE_NUMBER_ID
+      - key: META_VERIFY_TOKEN
         sync: false
-      - key: VERIFY_TOKEN
+      - key: SECRET_KEY
         sync: false
-      - key: GEMINI_API_KEY
+      - key: ADMIN_EMAIL
         sync: false
-      - key: OWNER_PHONE_NUMBER
+      - key: ADMIN_PASSWORD
         sync: false
       - key: DATABASE_URL
         fromDatabase:

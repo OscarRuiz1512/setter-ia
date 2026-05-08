@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Setter IA — Panel de Agencia</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e5e5e5; min-height: 100vh; }
+
+    .header { background: #1a1a1a; border-bottom: 1px solid #2a2a2a; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+    .header h1 { font-size: 20px; font-weight: 700; color: #fff; }
+    .header h1 span { color: #6366f1; }
+    .btn-logout { background: none; border: 1px solid #333; color: #999; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .btn-logout:hover { border-color: #555; color: #fff; }
+
+    .main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+    /* Login */
+    #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #0f0f0f; }
+    .login-box { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 40px; width: 360px; }
+    .login-box h2 { font-size: 22px; margin-bottom: 8px; color: #fff; }
+    .login-box p { color: #666; font-size: 14px; margin-bottom: 24px; }
+    .input { width: 100%; background: #0f0f0f; border: 1px solid #2a2a2a; color: #e5e5e5; padding: 10px 12px; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+    .input:focus { outline: none; border-color: #6366f1; }
+    .btn-primary { width: 100%; background: #6366f1; color: #fff; border: none; padding: 11px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .btn-primary:hover { background: #5254cc; }
+    .error-msg { color: #f87171; font-size: 13px; margin-top: 8px; display: none; }
+
+    /* Dashboard */
+    #dashboard { display: none; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 28px; }
+    .tab { padding: 8px 18px; border-radius: 8px; border: 1px solid #2a2a2a; background: none; color: #888; font-size: 14px; cursor: pointer; transition: all .15s; }
+    .tab.active, .tab:hover { background: #1a1a1a; color: #fff; border-color: #444; }
+    .tab.active { border-color: #6366f1; color: #6366f1; }
+
+    /* Cards */
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+    .section-title { font-size: 18px; font-weight: 600; color: #fff; }
+    .btn-sm { background: #6366f1; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-sm:hover { background: #5254cc; }
+    .btn-danger { background: #ef4444; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-success { background: #22c55e; }
+    .btn-success:hover { background: #16a34a; }
+    .btn-ghost { background: #1a1a1a; border: 1px solid #333; color: #aaa; }
+    .btn-ghost:hover { border-color: #555; color: #fff; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+    .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; }
+    .card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; }
+    .card-title { font-size: 16px; font-weight: 600; color: #fff; }
+    .badge { font-size: 11px; padding: 3px 8px; border-radius: 20px; font-weight: 600; }
+    .badge-active { background: #064e3b; color: #34d399; }
+    .badge-inactive { background: #1f1f1f; color: #666; }
+    .badge-plan { background: #1e1b4b; color: #818cf8; margin-left: 6px; }
+    .card-meta { font-size: 13px; color: #666; margin-bottom: 4px; }
+    .card-meta span { color: #aaa; }
+    .card-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+
+    /* Stats */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .stat-card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 16px 20px; }
+    .stat-label { font-size: 12px; color: #666; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #fff; }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { text-align: left; color: #666; font-weight: 500; padding: 10px 12px; border-bottom: 1px solid #2a2a2a; font-size: 12px; text-transform: uppercase; }
+    td { padding: 12px 12px; border-bottom: 1px solid #1a1a1a; color: #ccc; }
+    tr:hover td { background: #1a1a1a; }
+
+    /* Modal */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 50; display: flex; align-items: center; justify-content: center; display: none; }
+    .overlay.open { display: flex; }
+    .modal { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 14px; padding: 28px; width: 540px; max-height: 90vh; overflow-y: auto; }
+    .modal h3 { font-size: 18px; font-weight: 600; color: #fff; margin-bottom: 20px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 12px; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .4px; }
+    .field input, .field textarea, .field select { width: 100%; background: #0f0f0f; border: 1px solid #2a2a2a; color: #e5e5e5; padding: 9px 12px; border-radius: 8px; font-size: 14px; }
+    .field textarea { min-height: 100px; resize: vertical; font-family: inherit; }
+    .field input:focus, .field textarea:focus { outline: none; border-color: #6366f1; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+    .tag-ig { color: #e1306c; }
+    .tag-wa { color: #25d366; }
+    .empty { color: #555; text-align: center; padding: 40px; font-size: 14px; }
+    .toast { position: fixed; bottom: 24px; right: 24px; background: #22c55e; color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; z-index: 100; opacity: 0; transition: opacity .3s; pointer-events: none; }
+    .toast.show { opacity: 1; }
+    .toast.error { background: #ef4444; }
+  </style>
+</head>
+<body>
+
+<!-- Setup (primera vez) -->
+<div id="setup-screen" style="display:none;align-items:center;justify-content:center;min-height:100vh;background:#0f0f0f">
+  <div class="login-box">
+    <h2>Crear cuenta</h2>
+    <p style="color:#666;font-size:14px;margin-bottom:24px">Primera vez. Registra tu correo y contraseña para acceder al panel.</p>
+    <input class="input" type="email" id="setup-email" placeholder="Tu correo electrónico" />
+    <div style="position:relative">
+      <input class="input" type="password" id="setup-password" placeholder="Contraseña (mín. 6 caracteres)" style="padding-right:42px;margin-bottom:12px" />
+      <button type="button" onclick="toggleSetupPassword()" id="eye-setup" style="position:absolute;right:12px;top:50%;transform:translateY(-60%);background:none;border:none;cursor:pointer;color:#666;font-size:18px;padding:0;line-height:1">👁</button>
+    </div>
+    <button class="btn-primary" id="setup-btn" onclick="setupAccount()">Crear cuenta</button>
+    <div class="error-msg" id="setup-error"></div>
+  </div>
+</div>
+
+<!-- Login -->
+<div id="login-screen" style="display:none">
+  <div class="login-box">
+    <h2>Setter IA</h2>
+    <p>Panel de la agencia de setting</p>
+    <input class="input" type="email" id="email" placeholder="Correo electrónico" />
+    <div style="position:relative">
+      <input class="input" type="password" id="password" placeholder="Contraseña" style="padding-right:42px;margin-bottom:12px" />
+      <button type="button" onclick="togglePassword()" id="eye-btn" style="position:absolute;right:12px;top:50%;transform:translateY(-60%);background:none;border:none;cursor:pointer;color:#666;font-size:18px;padding:0;line-height:1">👁</button>
+    </div>
+    <button class="btn-primary" id="login-btn" onclick="login()">Entrar</button>
+    <div class="error-msg" id="login-error"></div>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard">
+  <div class="header">
+    <h1>Setter <span>IA</span> — Agencia</h1>
+    <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
+  </div>
+  <div class="main">
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('clientes')">Clientes</button>
+      <button class="tab" onclick="showTab('leads')">Leads</button>
+    </div>
+
+    <!-- Tab: Clientes -->
+    <div id="tab-clientes">
+      <div class="stats-grid" id="stats-grid"></div>
+      <div class="section-header">
+        <span class="section-title">Clientes</span>
+        <button class="btn-sm" onclick="openCreateModal()">+ Nuevo cliente</button>
+      </div>
+      <div class="grid" id="tenants-grid"></div>
+    </div>
+
+    <!-- Tab: Leads -->
+    <div id="tab-leads" style="display:none">
+      <div class="section-header">
+        <span class="section-title">Todos los leads</span>
+        <button class="btn-sm btn-ghost" onclick="loadLeads()">↻ Actualizar</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Cliente</th><th>Nombre</th><th>Email</th><th>WhatsApp</th><th>Objetivo</th><th>Canal</th><th>Fecha</th></tr></thead>
+          <tbody id="leads-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Crear / Editar cliente -->
+<div class="overlay" id="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title">Nuevo cliente</h3>
+    <input type="hidden" id="modal-tenant-id" />
+
+    <div class="field"><label>Nombre del negocio *</label><input id="f-name" placeholder="Ej: Coach Fitness Pro" /></div>
+    <div class="field"><label>Nombre del setter IA</label><input id="f-setter-name" placeholder="Alex" /></div>
+    <div class="field"><label>Plan</label>
+      <select id="f-plan"><option value="basic">Basic</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select>
+    </div>
+    <div class="field"><label>Instagram Account ID</label><input id="f-ig-id" placeholder="17841XXXXXXXXX" /></div>
+    <div class="field"><label>Instagram Access Token</label><input id="f-ig-token" type="password" placeholder="••••••••" /></div>
+    <div class="field"><label>WhatsApp Phone ID</label><input id="f-wa-id" placeholder="Phone Number ID de Meta" /></div>
+    <div class="field"><label>WhatsApp Token</label><input id="f-wa-token" type="password" placeholder="••••••••" /></div>
+    <div class="field"><label>WhatsApp número (con prefijo)</label><input id="f-wa-number" placeholder="+34600000000" /></div>
+    <div class="field"><label>Link de Calendly</label><input id="f-calendly" placeholder="https://calendly.com/tu-link" /></div>
+    <div class="field"><label>WhatsApp del coach (notificaciones)</label><input id="f-owner-wa" placeholder="+34600000000" /></div>
+    <div class="field"><label>Prompt personalizado (opcional)</label><textarea id="f-prompt" placeholder="Déjalo vacío para usar el prompt genérico. Si lo rellenas, sobreescribe el default."></textarea></div>
+
+    <div class="modal-actions">
+      <button class="btn-sm btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn-sm" onclick="saveTenant()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Reentrenar IA -->
+<div class="overlay" id="retrain-overlay">
+  <div class="modal">
+    <h3>Reentrenar setter IA</h3>
+    <input type="hidden" id="retrain-tenant-id" />
+    <p style="font-size:13px;color:#888;margin-bottom:16px;">Describe qué debe cambiar el setter. Puedes escribirlo como corrección, ejemplo de conversación o instrucción directa.</p>
+    <div class="field"><label>Feedback / corrección</label>
+      <textarea id="retrain-feedback" placeholder="Ej: El setter está siendo demasiado formal. Quiero que sea más cercano y use frases cortas. Además, que no pregunte el email hasta el final..." style="min-height:140px"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sm btn-ghost" onclick="closeRetrain()">Cancelar</button>
+      <button class="btn-sm" onclick="submitRetrain()">Aplicar cambio</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const API = window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin;
+  let token = localStorage.getItem('token') || '';
+  let tenants = [];
+
+  if (token) showDashboard();
+
+  // ── Auth ────────────────────────────────────────────────────────────────
+  async function login() {
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const errEl = document.getElementById('login-error');
+    const btn = document.querySelector('#login-screen .btn-primary');
+
+    if (!email || !password) {
+      errEl.textContent = 'Rellena el email y la contraseña';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    btn.textContent = 'Entrando...';
+    btn.disabled = true;
+    errEl.style.display = 'none';
+
+    try {
+      const res = await fetch(`${API}/admin/login`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email, password})
+      });
+      if (res.ok) {
+        const data = await res.json();
+        token = data.access_token;
+        localStorage.setItem('token', token);
+        showDashboard();
+      } else {
+        errEl.textContent = 'Email o contraseña incorrectos';
+        errEl.style.display = 'block';
+      }
+    } catch (e) {
+      errEl.textContent = 'No se puede conectar con el servidor. ¿Está arrancado?';
+      errEl.style.display = 'block';
+    } finally {
+      btn.textContent = 'Entrar';
+      btn.disabled = false;
+    }
+  }
+
+  function logout() {
+    token = '';
+    localStorage.removeItem('token');
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('dashboard').style.display = 'none';
+  }
+
+  function showDashboard() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    loadTenants();
+  }
+
+  function headers() {
+    return {'Content-Type':'application/json', 'Authorization': `Bearer ${token}`};
+  }
+
+  // ── Tabs ────────────────────────────────────────────────────────────────
+  function showTab(tab) {
+    document.getElementById('tab-clientes').style.display = tab === 'clientes' ? 'block' : 'none';
+    document.getElementById('tab-leads').style.display = tab === 'leads' ? 'block' : 'none';
+    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', (i===0&&tab==='clientes')||(i===1&&tab==='leads')));
+    if (tab === 'leads') loadLeads();
+  }
+
+  // ── Tenants ─────────────────────────────────────────────────────────────
+  async function loadTenants() {
+    const res = await fetch(`${API}/admin/tenants`, {headers: headers()});
+    if (!res.ok) { logout(); return; }
+    tenants = await res.json();
+    renderStats(tenants);
+    renderTenants(tenants);
+  }
+
+  function renderStats(tenants) {
+    const active = tenants.filter(t => t.is_active).length;
+    document.getElementById('stats-grid').innerHTML = `
+      <div class="stat-card"><div class="stat-label">Total clientes</div><div class="stat-value">${tenants.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Activos</div><div class="stat-value" style="color:#34d399">${active}</div></div>
+      <div class="stat-card"><div class="stat-label">Inactivos</div><div class="stat-value" style="color:#f87171">${tenants.length - active}</div></div>
+    `;
+  }
+
+  function renderTenants(list) {
+    const grid = document.getElementById('tenants-grid');
+    if (!list.length) { grid.innerHTML = '<div class="empty">No hay clientes todavía. Crea el primero.</div>'; return; }
+    grid.innerHTML = list.map(t => `
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">${t.name}</div>
+            <small style="color:#555">${t.setter_name}</small>
+          </div>
+          <div>
+            <span class="badge ${t.is_active ? 'badge-active' : 'badge-inactive'}">${t.is_active ? 'Activo' : 'Inactivo'}</span>
+            <span class="badge badge-plan">${t.plan}</span>
+          </div>
+        </div>
+        <div class="card-meta">Instagram: <span class="${t.has_instagram ? 'tag-ig' : ''}">${t.has_instagram ? '✓ Conectado' : '✗ Sin conectar'}</span></div>
+        <div class="card-meta">WhatsApp: <span class="${t.has_whatsapp ? 'tag-wa' : ''}">${t.has_whatsapp ? '✓ Conectado' : '✗ Sin conectar'}</span></div>
+        ${t.subscription_start ? `<div class="card-meta">Inicio: <span>${new Date(t.subscription_start).toLocaleDateString('es')}</span></div>` : ''}
+        <div class="card-actions">
+          <button class="btn-sm btn-ghost" onclick="openEditModal('${t.id}')">Editar</button>
+          <button class="btn-sm btn-ghost" onclick="openRetrain('${t.id}')">IA ✦</button>
+          ${t.is_active
+            ? `<button class="btn-sm btn-danger" onclick="toggleActive('${t.id}', false)">Desactivar</button>`
+            : `<button class="btn-sm btn-success" onclick="toggleActive('${t.id}', true)">Activar</button>`}
+          <button class="btn-sm btn-danger" onclick="deleteTenant('${t.id}', '${t.name}')">Eliminar</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function toggleActive(id, activate) {
+    const action = activate ? 'activate' : 'deactivate';
+    const res = await fetch(`${API}/admin/tenants/${id}/${action}`, {method:'POST', headers: headers()});
+    if (res.ok) { toast(activate ? 'Cliente activado' : 'Cliente desactivado'); loadTenants(); }
+  }
+
+  async function deleteTenant(id, name) {
+    if (!confirm(`¿Eliminar "${name}"? Esto borrará todas sus conversaciones y leads.`)) return;
+    const res = await fetch(`${API}/admin/tenants/${id}`, {method:'DELETE', headers: headers()});
+    if (res.ok) { toast('Cliente eliminado'); loadTenants(); }
+  }
+
+  // ── Modal crear/editar ───────────────────────────────────────────────────
+  function openCreateModal() {
+    document.getElementById('modal-title').textContent = 'Nuevo cliente';
+    document.getElementById('modal-tenant-id').value = '';
+    ['name','setter-name','ig-id','ig-token','wa-id','wa-token','wa-number','calendly','owner-wa','prompt'].forEach(f => {
+      document.getElementById(`f-${f}`).value = '';
+    });
+    document.getElementById('f-setter-name').value = 'Alex';
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+
+  function openEditModal(id) {
+    const t = tenants.find(x => x.id === id);
+    if (!t) return;
+    document.getElementById('modal-title').textContent = 'Editar cliente';
+    document.getElementById('modal-tenant-id').value = id;
+    document.getElementById('f-name').value = t.name || '';
+    document.getElementById('f-setter-name').value = t.setter_name || 'Alex';
+    document.getElementById('f-plan').value = t.plan || 'basic';
+    document.getElementById('f-ig-id').value = t.instagram_account_id || '';
+    document.getElementById('f-ig-token').value = '';
+    document.getElementById('f-wa-id').value = t.whatsapp_phone_id || '';
+    document.getElementById('f-wa-token').value = '';
+    document.getElementById('f-wa-number').value = t.whatsapp_number || '';
+    document.getElementById('f-calendly').value = t.calendly_link || '';
+    document.getElementById('f-owner-wa').value = t.owner_whatsapp || '';
+    document.getElementById('f-prompt').value = '';
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+
+  function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+
+  async function saveTenant() {
+    const id = document.getElementById('modal-tenant-id').value;
+    const body = {
+      name: document.getElementById('f-name').value,
+      setter_name: document.getElementById('f-setter-name').value || 'Alex',
+      plan: document.getElementById('f-plan').value,
+      instagram_account_id: document.getElementById('f-ig-id').value || null,
+      instagram_access_token: document.getElementById('f-ig-token').value || null,
+      whatsapp_phone_id: document.getElementById('f-wa-id').value || null,
+      whatsapp_token: document.getElementById('f-wa-token').value || null,
+      whatsapp_number: document.getElementById('f-wa-number').value || null,
+      calendly_link: document.getElementById('f-calendly').value || null,
+      owner_whatsapp: document.getElementById('f-owner-wa').value || null,
+      system_prompt: document.getElementById('f-prompt').value || null,
+    };
+    // Remove null values if editing (don't overwrite with null)
+    if (id) Object.keys(body).forEach(k => body[k] === null && delete body[k]);
+
+    const res = await fetch(
+      id ? `${API}/admin/tenants/${id}` : `${API}/admin/tenants`,
+      { method: id ? 'PUT' : 'POST', headers: headers(), body: JSON.stringify(body) }
+    );
+    if (res.ok) { toast(id ? 'Cliente actualizado' : 'Cliente creado'); closeModal(); loadTenants(); }
+    else { const e = await res.json(); toast(e.detail || 'Error', true); }
+  }
+
+  // ── Modal reentrenar IA ──────────────────────────────────────────────────
+  function openRetrain(id) {
+    document.getElementById('retrain-tenant-id').value = id;
+    document.getElementById('retrain-feedback').value = '';
+    document.getElementById('retrain-overlay').classList.add('open');
+  }
+
+  function closeRetrain() { document.getElementById('retrain-overlay').classList.remove('open'); }
+
+  async function submitRetrain() {
+    const id = document.getElementById('retrain-tenant-id').value;
+    const feedback = document.getElementById('retrain-feedback').value;
+    if (!feedback.trim()) return;
+    const btn = document.querySelector('#retrain-overlay .btn-sm:last-child');
+    btn.textContent = 'Procesando...'; btn.disabled = true;
+    const res = await fetch(`${API}/admin/tenants/${id}/retrain`, {
+      method: 'POST', headers: headers(), body: JSON.stringify({feedback})
+    });
+    btn.textContent = 'Aplicar cambio'; btn.disabled = false;
+    if (res.ok) { toast('Prompt actualizado correctamente'); closeRetrain(); }
+    else { toast('Error al reentrenar', true); }
+  }
+
+  // ── Leads ────────────────────────────────────────────────────────────────
+  async function loadLeads() {
+    const res = await fetch(`${API}/admin/leads`, {headers: headers()});
+    if (!res.ok) return;
+    const leads = await res.json();
+    const tbody = document.getElementById('leads-tbody');
+    if (!leads.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No hay leads todavía</td></tr>'; return; }
+    tbody.innerHTML = leads.map(l => `
+      <tr>
+        <td>${l.tenant}</td>
+        <td>${l.name || '—'}</td>
+        <td>${l.email || '—'}</td>
+        <td>${l.whatsapp_number || '—'}</td>
+        <td>${l.goal || '—'}</td>
+        <td><span class="${l.platform === 'instagram' ? 'tag-ig' : 'tag-wa'}">${l.platform}</span></td>
+        <td style="color:#555">${l.created_at ? new Date(l.created_at).toLocaleString('es') : '—'}</td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Toast ────────────────────────────────────────────────────────────────
+  function toast(msg, isError = false) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `toast show${isError ? ' error' : ''}`;
+    setTimeout(() => t.className = 'toast', 3000);
+  }
+
+  document.getElementById('password').addEventListener('keydown', e => e.key === 'Enter' && login());
+
+  function togglePassword() {
+    const input = document.getElementById('password');
+    const btn = document.getElementById('eye-btn');
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = '🙈';
+    } else {
+      input.type = 'password';
+      btn.textContent = '👁';
+    }
+  }
+</script>
+</body>
+</html>

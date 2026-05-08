@@ -1,59 +1,89 @@
+from __future__ import annotations
 import os
 import re
 import json
-import google.generativeai as genai
+import anthropic
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-SYSTEM_PROMPT = """Eres Alex, un asistente de ventas de planes de entrenamiento y nutrición personalizados.
-
-Tu misión es seguir este flujo de forma natural:
-1. Saluda de forma cálida y pregunta cuál es su objetivo fitness.
-2. Haz preguntas de calificación (máximo 2 por mensaje):
-   - Objetivo principal (perder grasa, ganar músculo, mejorar rendimiento, salud general…)
-   - Nivel de experiencia (principiante, intermedio, avanzado)
-   - Días disponibles para entrenar
-   - Alguna lesión o restricción alimentaria relevante
-3. Explica brevemente que tenéis planes 100% personalizados de entrenamiento + nutrición.
-4. Recoge los datos de contacto para que el equipo le llame:
-   - Nombre completo
-   - Email
-5. Cierra la conversación con positividad, indicando que el equipo le contactará pronto.
-
-Cuando tengas nombre, email y objetivo, añade al FINAL de tu respuesta (sin nada después):
-[[LEAD_CAPTURED:{"name": "NOMBRE", "email": "EMAIL", "goal": "OBJETIVO_RESUMIDO"}]]
-
-REGLAS:
-- Habla siempre en español, de forma cercana y motivadora.
-- Mensajes cortos y naturales, como un chat real de WhatsApp.
-- No inventes precios, el equipo informará personalmente.
-- Si alguien no está interesado, sé amable y deja la puerta abierta.
-- No repitas preguntas que ya hayas hecho."""
-
-model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash",
-    system_instruction=SYSTEM_PROMPT,
-)
+_client = None
 
 
-def get_ai_response(history: list, phone_number: str) -> tuple[str, dict | None]:
-    # Convert history format: "assistant" → "model" (Gemini format)
-    gemini_history = []
-    for msg in history[:-1]:
-        role = "model" if msg["role"] == "assistant" else "user"
-        gemini_history.append({"role": role, "parts": [msg["content"]]})
+def get_client() -> anthropic.Anthropic:
+    global _client
+    if _client is None:
+        _client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    return _client
 
-    chat = model.start_chat(history=gemini_history)
-    response = chat.send_message(history[-1]["content"])
-    content = response.text
+
+def get_ai_response(
+    history: list,
+    system_prompt: str,
+    user_id: str,
+    platform: str = "instagram",
+) -> tuple[str, dict | None]:
+    """
+    Genera la respuesta del setter IA usando Claude.
+
+    Returns:
+        (response_text, lead_data_or_None)
+    """
+    client = get_client()
+
+    # Construye mensajes en formato Anthropic
+    messages = []
+    for msg in history:
+        role = "assistant" if msg["role"] == "assistant" else "user"
+        messages.append({"role": role, "content": msg["content"]})
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=512,
+        system=system_prompt,
+        messages=messages,
+    )
+
+    content = response.content[0].text
     lead_data = None
 
     match = re.search(r"\[\[LEAD_CAPTURED:(.*?)\]\]", content, re.DOTALL)
     if match:
         try:
             lead_data = json.loads(match.group(1))
-            lead_data["phone"] = phone_number
+            lead_data["user_id"] = user_id
+            lead_data["platform"] = platform
         except json.JSONDecodeError:
             pass
 
     return content, lead_data
+
+
+def retrain_prompt(current_prompt: str, feedback: str) -> str:
+    """
+    Mejora el system prompt de un tenant basándose en feedback del setter humano.
+    Permite 'reeducar' la IA con el proceso real de setting.
+    """
+    client = get_client()
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2048,
+        system=(
+            "Eres un experto en ventas y copywriting de alto rendimiento. "
+            "Tu tarea es mejorar prompts de sistemas de IA para setters de ventas. "
+            "Devuelve ÚNICAMENTE el prompt mejorado, sin explicaciones ni comentarios."
+        ),
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"Este es el prompt actual de mi setter IA:\n\n"
+                    f"---\n{current_prompt}\n---\n\n"
+                    f"Este es el feedback / corrección que quiero aplicar:\n\n"
+                    f"{feedback}\n\n"
+                    f"Devuélveme el prompt actualizado incorporando este feedback, "
+                    f"manteniendo el resto del flujo intacto."
+                ),
+            }
+        ],
+    )
+
+    return response.content[0].text

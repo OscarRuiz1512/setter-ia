@@ -1,0 +1,9 @@
+.env
+*.db
+__pycache__/
+*.pyc
+.DS_Store
+venv/
+logs/server*.log
+resumen_transporte_sostenible.*
+services/.DS_Store
