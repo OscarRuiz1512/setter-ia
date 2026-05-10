@@ -34,22 +34,27 @@ def startup():
 
 
 def _auto_create_admin():
-    """Crea el primer admin automáticamente si hay credenciales en el entorno y no existe ninguno."""
+    """Crea o actualiza el admin desde las variables de entorno en cada arranque."""
     email = os.getenv("ADMIN_EMAIL")
     password = os.getenv("ADMIN_PASSWORD")
     if not email or not password:
         return
     from database import AdminUser
+    import secrets, hashlib
     db = get_db()
     try:
-        if db.query(AdminUser).first():
-            return
-        admin = AdminUser.create(email=email, password=password)
-        db.add(admin)
+        admin = db.query(AdminUser).filter_by(email=email.lower().strip()).first()
+        if admin:
+            salt = secrets.token_hex(32)
+            admin.salt = salt
+            admin.password_hash = AdminUser.hash_password(password, salt)
+        else:
+            admin = AdminUser.create(email=email, password=password)
+            db.add(admin)
         db.commit()
-        print(f"[Setter IA] Admin creado automáticamente: {email}")
+        print(f"[Setter IA] Admin sincronizado: {email}")
     except Exception as e:
-        print(f"[Setter IA] Error al crear admin: {e}")
+        print(f"[Setter IA] Error al sincronizar admin: {e}")
     finally:
         db.close()
 
